@@ -1,0 +1,14 @@
+*.tiled-session
+*.tiled-session.lock
+.env
+*.zip
+*.wasm
+*.exe
+*.m4a
+*.kra
+*.kra~
+*.png~
+wasm/assets/*
+tmp/*
+test.go
+raw-mind.md
