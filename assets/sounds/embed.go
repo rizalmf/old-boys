@@ -5,6 +5,8 @@ import (
 )
 
 var (
+	Rates int = 44100
+
 	//go:embed bass.mp3
 	Bass_mp3 []byte
 

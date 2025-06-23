@@ -2,7 +2,7 @@ package scenes
 
 import (
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/rizalmf/old-days/src/lang"
+	"github.com/rizalmf/old-boys/src/lang"
 )
 
 type SceneId uint

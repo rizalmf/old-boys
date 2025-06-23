@@ -13,3 +13,8 @@ run/game:
 .PHONY: run/web
 run/web:
 	C:/go/bin/wasmserve.exe -http=":8083" -allow-origin="*"
+
+# live: live code
+.PHONY: live
+live:
+	C:/go/bin/air.exe

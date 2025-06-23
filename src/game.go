@@ -2,8 +2,8 @@ package src
 
 import (
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/rizalmf/old-days/src/constants"
-	"github.com/rizalmf/old-days/src/scenes"
+	"github.com/rizalmf/old-boys/src/constants"
+	"github.com/rizalmf/old-boys/src/scenes"
 )
 
 type Game struct {

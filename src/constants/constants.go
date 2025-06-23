@@ -1,7 +1,7 @@
 package constants
 
 const (
-	GameTitle = "Old Days"
+	GameTitle = "Old Boys"
 
 	TPS = 60
 

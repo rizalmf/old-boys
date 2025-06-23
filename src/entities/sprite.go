@@ -2,6 +2,7 @@ package entities
 
 import (
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/rizalmf/old-boys/src/animations"
 )
 
 type Sprite struct {
@@ -11,6 +12,8 @@ type Sprite struct {
 
 type Char struct {
 	*Sprite
+	Sheet            *animations.SpriteSheet
+	Animations       *animations.Animation // single state animation
 	RunSpeed         float64
 	CenterX, CenterY float64
 }

@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/rizalmf/old-days/src"
+	"github.com/rizalmf/old-boys/src"
 )
 
 func main() {
