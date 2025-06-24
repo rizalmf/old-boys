@@ -68,23 +68,30 @@ type MainScene struct {
 	fontSource *text.GoTextFaceSource
 
 	// State
-	state inGameState
+	state       inGameState
+	isVeryBegin bool
 
 	// Images
-	Man1         entities.Char
-	Man2         entities.Char
-	Man3         entities.Char
-	sky          *ebiten.Image
-	skyOffset    float64
-	garage       *ebiten.Image
-	garageDoor   *ebiten.Image
-	garageInside *ebiten.Image
+	Man1             entities.Char
+	Man2             entities.Char
+	Man3             entities.Char
+	sky              *ebiten.Image
+	skyOffset        float64
+	garageAndSky     *ebiten.Image
+	garage           *ebiten.Image
+	garageDoor       *ebiten.Image
+	garageInside     *ebiten.Image
+	garageAnimY      float64
+	garageAnimActive bool
+	doorAnimY        float64
+	doorAnimActive   bool
 
 	// Audio
 	BassAudio    *audio.Player
 	GuitarAudio  *audio.Player
 	DrumsAudio   *audio.Player
 	AudioContext *audio.Context
+	GarageSFX    []byte
 
 	// Songs
 	// --- State Song ---
@@ -120,9 +127,9 @@ func NewGameScene() *MainScene {
 	return &MainScene{
 		ticksPerSec: 100.0, // "BPM" virtual.
 		noteSpeed:   0.7,   // kecepatan visual not.
-		lastFrame:   time.Now(),
-		songChart:   make([]*Note, 0),
-		hitZoneY:    338,
+		// lastFrame:   time.Now(),
+		songChart: make([]*Note, 0),
+		hitZoneY:  338,
 	}
 }
 
@@ -133,9 +140,10 @@ func (g *MainScene) ExportProperties() (prop Properties) {
 
 func (g *MainScene) FirstLoad() {
 
+	g.isVeryBegin = true
 	g.state = inGameMenu
 	g.loadCount = 0
-	g.loadTotal = 23
+	g.loadTotal = 25
 	g.score = Score{
 		perfectNote: 100,
 		goodNote:    50,
@@ -250,6 +258,16 @@ func (g *MainScene) FirstLoad() {
 	g.BassAudio = g.AudioContext.NewPlayerF32FromBytes(sfx)
 	g.BassAudio.SetVolume(0)
 
+	g.loadCount++
+	grMp3, err := mp3.DecodeF32(bytes.NewReader(sounds.Garage_mp3))
+	if err != nil {
+		log.Fatal(err)
+	}
+	g.GarageSFX, err = io.ReadAll(grMp3)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// images
 	g.loadCount++
 	img, _, err = image.Decode(bytes.NewReader(images.Sky_png))
@@ -264,6 +282,13 @@ func (g *MainScene) FirstLoad() {
 		log.Fatal(err)
 	}
 	g.garage = ebiten.NewImageFromImage(img)
+
+	g.loadCount++
+	img, _, err = image.Decode(bytes.NewReader(images.GarageAndSky_png))
+	if err != nil {
+		log.Fatal(err)
+	}
+	g.garageAndSky = ebiten.NewImageFromImage(img)
 
 	g.loadCount++
 	img, _, err = image.Decode(bytes.NewReader(images.Door_png))
@@ -349,7 +374,13 @@ func (g *MainScene) FirstLoad() {
 	}
 	g.markMissImage = ebiten.NewImageFromImage(img)
 
-	g.state = inGamePlay
+	g.garageAnimY = float64(constants.ScreenHeight)
+	g.garageAnimActive = false
+
+	g.doorAnimY = 0
+	g.doorAnimActive = false
+
+	// g.state = inGamePlay
 	g.isLoaded = true
 }
 
@@ -385,12 +416,50 @@ func (g *MainScene) Update() SceneId {
 }
 
 func (g *MainScene) UpdateInGameMenu() {
-	g.BassAudio.Pause()
-	g.GuitarAudio.Pause()
-	g.DrumsAudio.Pause()
-	g.BassAudio.Rewind()
-	g.GuitarAudio.Rewind()
-	g.DrumsAudio.Rewind()
+
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
+		cX, cY := ebiten.CursorPosition()
+		fmt.Println(cX, cY)
+		return
+	}
+	if !g.garageAnimActive && g.isVeryBegin {
+		g.touchIDs = ebiten.AppendTouchIDs(g.touchIDs[:0])
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) || len(g.touchIDs) > 0 {
+
+			g.garageAnimActive = true
+			g.isVeryBegin = false
+		}
+	}
+
+	if g.garageAnimActive {
+		speed := 15.0
+		g.garageAnimY -= speed
+		if g.garageAnimY <= 0 {
+			g.garageAnimY = 0
+			g.garageAnimActive = false
+			g.doorAnimActive = true
+
+			p := g.AudioContext.NewPlayerF32FromBytes(g.GarageSFX)
+			p.SetVolume(1)
+			p.Play()
+		}
+	}
+
+	if g.doorAnimActive {
+		if g.doorAnimY == 0 {
+			g.lastFrame = time.Now().Add(-time.Duration(2.5 * float64(time.Second)))
+		}
+		speed := 1.0
+		g.doorAnimY -= speed
+		if g.doorAnimY < (-constants.ScreenHeight / 2) {
+			g.doorAnimY = -constants.ScreenHeight / 2
+			g.state = inGamePlay
+			g.doorAnimActive = false
+			g.BassAudio.Rewind()
+			g.GuitarAudio.Rewind()
+			g.DrumsAudio.Rewind()
+		}
+	}
 
 }
 func (g *MainScene) UpdateInGamePlay() {
@@ -578,11 +647,6 @@ func (g *MainScene) UpdateInGamePlay() {
 		g.DrumsAudio.SetVolume(1)
 	}
 
-	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-		cX, cY := ebiten.CursorPosition()
-		fmt.Println(cX, cY)
-	}
-
 }
 func (g *MainScene) UpdateInGameFinish() {
 
@@ -617,6 +681,91 @@ func (g *MainScene) DrawInGameMenu(screen *ebiten.Image) {
 		op.GeoM.Translate(off+float64(i*constants.ScreenWidth), 0)
 		screen.DrawImage(g.sky, op)
 		op.GeoM.Reset()
+	}
+
+	y := g.garageAnimY
+	op.GeoM.Reset()
+	op.GeoM.Translate(0, y)
+	screen.DrawImage(g.garageInside, op)
+	op.GeoM.Reset()
+
+	if g.doorAnimActive {
+		// boys
+		op.GeoM.Translate(g.Man3.X, g.Man3.Y)
+		Frame, _ := g.Man3.Animations.Frame()
+		screen.DrawImage(g.Man3.Image.SubImage(
+			g.Man3.Sheet.HorizontalRect(Frame),
+		).(*ebiten.Image), op)
+		op.GeoM.Reset()
+		if g.Man3.IsMark {
+			op.GeoM.Translate(g.Man3.X+18, g.Man3.Y-30)
+			screen.DrawImage(g.Man3.MarkImage, op)
+			op.GeoM.Reset()
+		}
+
+		op.GeoM.Translate(g.Man1.X, g.Man1.Y)
+		Frame, _ = g.Man1.Animations.Frame()
+		screen.DrawImage(g.Man1.Image.SubImage(
+			g.Man1.Sheet.HorizontalRect(Frame),
+		).(*ebiten.Image), op)
+		op.GeoM.Reset()
+		if g.Man1.IsMark {
+			op.GeoM.Translate(g.Man1.X+8, g.Man1.Y-15)
+			screen.DrawImage(g.Man1.MarkImage, op)
+			op.GeoM.Reset()
+		}
+
+		op.GeoM.Translate(g.Man2.X, g.Man2.Y)
+		Frame, _ = g.Man2.Animations.Frame()
+		screen.DrawImage(g.Man2.Image.SubImage(
+			g.Man2.Sheet.HorizontalRect(Frame),
+		).(*ebiten.Image), op)
+		op.GeoM.Reset()
+		if g.Man2.IsMark {
+			op.GeoM.Translate(g.Man2.X+13, g.Man2.Y-15)
+			screen.DrawImage(g.Man2.MarkImage, op)
+			op.GeoM.Reset()
+		}
+	}
+
+	if !g.doorAnimActive {
+		op.GeoM.Translate(0, y)
+	} else {
+		op.GeoM.Translate(0, g.doorAnimY)
+	}
+	screen.DrawImage(g.garageDoor, op)
+	op.GeoM.Reset()
+
+	op.GeoM.Translate(0, y)
+	screen.DrawImage(g.garageAndSky, op)
+	op.GeoM.Reset()
+
+	if g.isVeryBegin {
+		titleTexts := constants.GameTitle
+		var titleFontSize float64 = 70
+		opt := &text.DrawOptions{}
+		opt.GeoM.Translate(constants.ScreenWidth/2, 80)
+		opt.ColorScale.ScaleWithColor(color.Black)
+		opt.LineSpacing = titleFontSize
+		opt.PrimaryAlign = text.AlignCenter
+		text.Draw(screen, titleTexts, &text.GoTextFace{
+			Source: g.fontSource,
+			Size:   titleFontSize,
+		}, opt)
+
+		opt.GeoM.Reset()
+
+		var fontSize float64 = 32
+		texts := "Press Enter/Click/Touch"
+		opt.GeoM.Translate(constants.ScreenWidth/2, 220)
+		opt.ColorScale.ScaleWithColor(color.Black)
+		opt.LineSpacing = fontSize * 1.5
+		opt.PrimaryAlign = text.AlignCenter
+		text.Draw(screen, texts, &text.GoTextFace{
+			Source: g.fontSource,
+			Size:   fontSize,
+		}, opt)
+		opt.GeoM.Reset()
 	}
 
 }

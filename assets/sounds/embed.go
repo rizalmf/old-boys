@@ -15,4 +15,7 @@ var (
 
 	//go:embed drums.mp3
 	Drums_mp3 []byte
+
+	//go:embed garage-door.mp3
+	Garage_mp3 []byte
 )

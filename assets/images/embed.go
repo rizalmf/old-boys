@@ -12,6 +12,9 @@ var (
 	//go:embed door.png
 	Door_png []byte
 
+	//go:embed garage.png
+	GarageAndSky_png []byte
+
 	//go:embed garage2.png
 	Garage_png []byte
 
