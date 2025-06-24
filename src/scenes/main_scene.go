@@ -43,6 +43,21 @@ const (
 	NoteHeight    = 145
 )
 
+type ScoreCriteria struct {
+	perfect int
+	good    int
+	miss    int
+}
+
+type Score struct {
+	perfectNote uint
+	goodNote    uint
+	missNote    int
+	guitarScore ScoreCriteria
+	bassScore   ScoreCriteria
+	drumScore   ScoreCriteria
+}
+
 type MainScene struct {
 	isLoaded    bool
 	loadCount   int
@@ -60,6 +75,7 @@ type MainScene struct {
 	Man2         entities.Char
 	Man3         entities.Char
 	sky          *ebiten.Image
+	skyOffset    float64
 	garage       *ebiten.Image
 	garageDoor   *ebiten.Image
 	garageInside *ebiten.Image
@@ -77,7 +93,8 @@ type MainScene struct {
 	ticksPerSec float64 // Berapa banyak "tick" yang berlalu per detik.
 
 	// --- State Game ---
-	score     int
+	scoreVal  int
+	score     Score
 	touchIDs  []ebiten.TouchID
 	lanes     []Instrument // Konfigurasi untuk setiap lajur.
 	noteSpeed float64      // Kecepatan not jatuh ke bawah (pixel per tick).
@@ -85,6 +102,9 @@ type MainScene struct {
 	lastFrame time.Time    // Untuk menghitung delta time.
 
 	// --- Visual ---
+	markPerfectImage  *ebiten.Image
+	markGoodImage     *ebiten.Image
+	markMissImage     *ebiten.Image
 	isNoteMan1Pressed bool
 	isNoteMan2Pressed bool
 	isNoteMan3Pressed bool
@@ -115,7 +135,12 @@ func (g *MainScene) FirstLoad() {
 
 	g.state = inGameMenu
 	g.loadCount = 0
-	g.loadTotal = 19
+	g.loadTotal = 23
+	g.score = Score{
+		perfectNote: 100,
+		goodNote:    50,
+		missNote:    0, // tanpa penalty
+	}
 
 	var err error
 
@@ -255,6 +280,7 @@ func (g *MainScene) FirstLoad() {
 	g.garageInside = ebiten.NewImageFromImage(img)
 
 	g.loadCount++
+	markTime := 1 * 60
 	img, _, err = image.Decode(bytes.NewReader(images.Man1_png))
 	if err != nil {
 		log.Fatal(err)
@@ -267,6 +293,7 @@ func (g *MainScene) FirstLoad() {
 		},
 		Sheet:      animations.NewSpriteSheet(176, 111),
 		Animations: animations.NewAnimationHorizotal(0, 1, 32),
+		MarkTime:   markTime,
 	}
 
 	g.loadCount++
@@ -282,6 +309,7 @@ func (g *MainScene) FirstLoad() {
 		},
 		Sheet:      animations.NewSpriteSheet(176, 111),
 		Animations: animations.NewAnimationHorizotal(0, 1, 32),
+		MarkTime:   markTime,
 	}
 
 	g.loadCount++
@@ -297,7 +325,29 @@ func (g *MainScene) FirstLoad() {
 		},
 		Sheet:      animations.NewSpriteSheet(128, 112),
 		Animations: animations.NewAnimationHorizotal(0, 1, 32),
+		MarkTime:   markTime,
 	}
+
+	g.loadCount++
+	img, _, err = image.Decode(bytes.NewReader(images.MarkPerfect_png))
+	if err != nil {
+		log.Fatal(err)
+	}
+	g.markPerfectImage = ebiten.NewImageFromImage(img)
+
+	g.loadCount++
+	img, _, err = image.Decode(bytes.NewReader(images.MarkGood_png))
+	if err != nil {
+		log.Fatal(err)
+	}
+	g.markGoodImage = ebiten.NewImageFromImage(img)
+
+	g.loadCount++
+	img, _, err = image.Decode(bytes.NewReader(images.MarkMiss_png))
+	if err != nil {
+		log.Fatal(err)
+	}
+	g.markMissImage = ebiten.NewImageFromImage(img)
 
 	g.state = inGamePlay
 	g.isLoaded = true
@@ -317,6 +367,11 @@ func (g *MainScene) OnExit() {
 
 func (g *MainScene) Update() SceneId {
 
+	if !g.isLoaded {
+		g.loadPercent = int(float64(g.loadCount) / float64(g.loadTotal) * 100)
+		return GameSceneId
+	}
+
 	switch g.state {
 	case inGameMenu:
 		g.UpdateInGameMenu()
@@ -330,10 +385,6 @@ func (g *MainScene) Update() SceneId {
 }
 
 func (g *MainScene) UpdateInGameMenu() {
-	if !g.isLoaded {
-		g.loadPercent = int(float64(g.loadCount) / float64(g.loadTotal) * 100)
-		return
-	}
 	g.BassAudio.Pause()
 	g.GuitarAudio.Pause()
 	g.DrumsAudio.Pause()
@@ -343,6 +394,28 @@ func (g *MainScene) UpdateInGameMenu() {
 
 }
 func (g *MainScene) UpdateInGamePlay() {
+	if g.Man1.IsMark {
+		g.Man1.CurrentMarkTime++
+		if g.Man1.CurrentMarkTime > g.Man1.MarkTime {
+			g.Man1.CurrentMarkTime = 0
+			g.Man1.IsMark = false
+		}
+	}
+	if g.Man2.IsMark {
+		g.Man2.CurrentMarkTime++
+		if g.Man2.CurrentMarkTime > g.Man2.MarkTime {
+			g.Man2.CurrentMarkTime = 0
+			g.Man2.IsMark = false
+		}
+	}
+	if g.Man3.IsMark {
+		g.Man3.CurrentMarkTime++
+		if g.Man3.CurrentMarkTime > g.Man3.MarkTime {
+			g.Man3.CurrentMarkTime = 0
+			g.Man3.IsMark = false
+		}
+	}
+
 	g.Man1.Animations.Update()
 	g.Man2.Animations.Update()
 	g.Man3.Animations.Update()
@@ -350,6 +423,11 @@ func (g *MainScene) UpdateInGamePlay() {
 	// Hitung delta time untuk pergerakan yang konsisten.
 	dt := time.Since(g.lastFrame).Seconds()
 	g.lastFrame = time.Now()
+
+	g.skyOffset -= 20 * dt
+	if g.skyOffset <= -constants.ScreenWidth {
+		g.skyOffset += constants.ScreenWidth
+	}
 
 	// Majukan posisi waktu lagu.
 	g.currentTick += g.ticksPerSec * dt
@@ -368,13 +446,26 @@ func (g *MainScene) UpdateInGamePlay() {
 		if note.YPosition > (NoteY + NoteHeight) {
 			note.IsActive = false
 
+			g.scoreVal += int(g.score.missNote)
 			switch note.Lane {
 			case GuitarLaneId:
+				g.score.guitarScore.miss += 1
 				g.GuitarAudio.SetVolume(0)
+				g.Man1.MarkImage = g.markMissImage
+				g.Man1.IsMark = true
+				g.Man1.CurrentMarkTime = 0
 			case DrumsLaneId:
+				g.score.drumScore.miss += 1
 				g.DrumsAudio.SetVolume(0)
+				g.Man3.MarkImage = g.markMissImage
+				g.Man3.IsMark = true
+				g.Man3.CurrentMarkTime = 0
 			case BassLaneId:
+				g.score.bassScore.miss += 1
 				g.BassAudio.SetVolume(0)
+				g.Man2.MarkImage = g.markMissImage
+				g.Man2.IsMark = true
+				g.Man2.CurrentMarkTime = 0
 			}
 		}
 	}
@@ -428,28 +519,50 @@ func (g *MainScene) UpdateInGamePlay() {
 			// Jika ada not yang ditemukan dalam jangkauan.
 			if bestNote != nil {
 				if minTickDiff <= perfectWindow {
-					fmt.Println("PERFECT!")
-					g.score += 100
+					g.scoreVal += int(g.score.perfectNote)
 					bestNote.IsActive = false
 					switch bestNote.Lane {
 					case GuitarLaneId:
+						g.score.guitarScore.perfect += 1
 						g.GuitarAudio.SetVolume(1)
+						g.Man1.MarkImage = g.markPerfectImage
+						g.Man1.IsMark = true
+						g.Man1.CurrentMarkTime = 0
 					case DrumsLaneId:
+						g.score.drumScore.perfect += 1
 						g.DrumsAudio.SetVolume(1)
+						g.Man3.MarkImage = g.markPerfectImage
+						g.Man3.IsMark = true
+						g.Man3.CurrentMarkTime = 0
 					case BassLaneId:
+						g.score.bassScore.perfect += 1
 						g.BassAudio.SetVolume(1)
+						g.Man2.MarkImage = g.markPerfectImage
+						g.Man2.IsMark = true
+						g.Man2.CurrentMarkTime = 0
 					}
 				} else if minTickDiff <= goodWindow {
-					fmt.Println("GOOD")
-					g.score += 50
+					g.scoreVal += int(g.score.goodNote)
 					bestNote.IsActive = false
 					switch bestNote.Lane {
 					case GuitarLaneId:
+						g.score.guitarScore.good += 1
 						g.GuitarAudio.SetVolume(1)
+						g.Man1.MarkImage = g.markGoodImage
+						g.Man1.IsMark = true
+						g.Man1.CurrentMarkTime = 0
 					case DrumsLaneId:
+						g.score.drumScore.good += 1
 						g.DrumsAudio.SetVolume(1)
+						g.Man3.MarkImage = g.markGoodImage
+						g.Man3.IsMark = true
+						g.Man3.CurrentMarkTime = 0
 					case BassLaneId:
+						g.score.bassScore.good += 1
 						g.BassAudio.SetVolume(1)
+						g.Man2.MarkImage = g.markGoodImage
+						g.Man2.IsMark = true
+						g.Man2.CurrentMarkTime = 0
 					}
 				}
 			}
@@ -476,6 +589,15 @@ func (g *MainScene) UpdateInGameFinish() {
 }
 func (g *MainScene) Draw(screen *ebiten.Image) {
 
+	if !g.isLoaded {
+		x := (constants.ScreenWidth - 70) / 2
+		y := (constants.ScreenHeight - 30) / 2
+		l := 70
+		ebitenutil.DebugPrintAt(screen, fmt.Sprintf("Loading %d", g.loadPercent)+"%", x, y)
+		vector.StrokeLine(screen, float32(x), float32(y)+20, float32(x)+(float32(l)*float32(g.loadPercent)/100), float32(y)+20, 7, color.White, false)
+		return
+	}
+
 	switch g.state {
 	case inGameMenu:
 		g.DrawInGameMenu(screen)
@@ -488,20 +610,26 @@ func (g *MainScene) Draw(screen *ebiten.Image) {
 
 func (g *MainScene) DrawInGameMenu(screen *ebiten.Image) {
 
-	if !g.isLoaded {
-		ebitenutil.DebugPrintAt(screen, fmt.Sprintf("Loading %d", g.loadPercent)+"%", (constants.ScreenWidth-70)/2, (constants.ScreenHeight-30)/2)
-		return
-	}
-
 	op := &ebiten.DrawImageOptions{}
 
-	screen.DrawImage(g.garageDoor, op)
-	op.GeoM.Reset()
+	off := g.skyOffset
+	for i := range 2 {
+		op.GeoM.Translate(off+float64(i*constants.ScreenWidth), 0)
+		screen.DrawImage(g.sky, op)
+		op.GeoM.Reset()
+	}
 
 }
 
 func (g *MainScene) DrawInGamePlay(screen *ebiten.Image) {
 	op := &ebiten.DrawImageOptions{}
+
+	off := g.skyOffset
+	for i := range 2 {
+		op.GeoM.Translate(off+float64(i*constants.ScreenWidth), 0)
+		screen.DrawImage(g.sky, op)
+		op.GeoM.Reset()
+	}
 
 	// garage
 	screen.DrawImage(g.garageInside, op)
@@ -517,6 +645,11 @@ func (g *MainScene) DrawInGamePlay(screen *ebiten.Image) {
 		g.Man3.Sheet.HorizontalRect(Frame),
 	).(*ebiten.Image), op)
 	op.GeoM.Reset()
+	if g.Man3.IsMark {
+		op.GeoM.Translate(g.Man3.X+18, g.Man3.Y-30)
+		screen.DrawImage(g.Man3.MarkImage, op)
+		op.GeoM.Reset()
+	}
 
 	op.GeoM.Translate(g.Man1.X, g.Man1.Y)
 	Frame, _ = g.Man1.Animations.Frame()
@@ -524,6 +657,11 @@ func (g *MainScene) DrawInGamePlay(screen *ebiten.Image) {
 		g.Man1.Sheet.HorizontalRect(Frame),
 	).(*ebiten.Image), op)
 	op.GeoM.Reset()
+	if g.Man1.IsMark {
+		op.GeoM.Translate(g.Man1.X+8, g.Man1.Y-15)
+		screen.DrawImage(g.Man1.MarkImage, op)
+		op.GeoM.Reset()
+	}
 
 	op.GeoM.Translate(g.Man2.X, g.Man2.Y)
 	Frame, _ = g.Man2.Animations.Frame()
@@ -531,6 +669,11 @@ func (g *MainScene) DrawInGamePlay(screen *ebiten.Image) {
 		g.Man2.Sheet.HorizontalRect(Frame),
 	).(*ebiten.Image), op)
 	op.GeoM.Reset()
+	if g.Man2.IsMark {
+		op.GeoM.Translate(g.Man2.X+13, g.Man2.Y-15)
+		screen.DrawImage(g.Man2.MarkImage, op)
+		op.GeoM.Reset()
+	}
 
 	// note
 	x := float32(firstNoteX)

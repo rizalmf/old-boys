@@ -35,4 +35,13 @@ var (
 
 	//go:embed man3-ico.png
 	Man3_ico_png []byte
+
+	//go:embed mark-perfect.png
+	MarkPerfect_png []byte
+
+	//go:embed mark-good.png
+	MarkGood_png []byte
+
+	//go:embed mark-miss.png
+	MarkMiss_png []byte
 )
