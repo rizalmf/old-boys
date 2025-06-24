@@ -2,22 +2,29 @@ package scenes
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/color"
 	_ "image/png"
 	"io"
 	"log"
+	"math"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/audio"
 	"github.com/hajimehoshi/ebiten/v2/audio/mp3"
+	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
+	"github.com/hajimehoshi/ebiten/v2/text/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
+	"github.com/rizalmf/old-boys/assets/fonts"
 	"github.com/rizalmf/old-boys/assets/images"
+	"github.com/rizalmf/old-boys/assets/notes"
 	"github.com/rizalmf/old-boys/assets/sounds"
 	"github.com/rizalmf/old-boys/src/animations"
+	"github.com/rizalmf/old-boys/src/constants"
 	"github.com/rizalmf/old-boys/src/entities"
 )
 
@@ -37,14 +44,22 @@ const (
 )
 
 type MainScene struct {
-	isLoaded bool
-	// state
+	isLoaded    bool
+	loadCount   int
+	loadTotal   int
+	loadPercent int
+
+	// Fonts
+	fontSource *text.GoTextFaceSource
+
+	// State
 	state inGameState
 
 	// Images
 	Man1         entities.Char
 	Man2         entities.Char
 	Man3         entities.Char
+	sky          *ebiten.Image
 	garage       *ebiten.Image
 	garageDoor   *ebiten.Image
 	garageInside *ebiten.Image
@@ -63,6 +78,7 @@ type MainScene struct {
 
 	// --- State Game ---
 	score     int
+	touchIDs  []ebiten.TouchID
 	lanes     []Instrument // Konfigurasi untuk setiap lajur.
 	noteSpeed float64      // Kecepatan not jatuh ke bawah (pixel per tick).
 	hitZoneY  float64      // Posisi Y dari zona penilaian.
@@ -81,7 +97,13 @@ type MainScene struct {
 }
 
 func NewGameScene() *MainScene {
-	return &MainScene{}
+	return &MainScene{
+		ticksPerSec: 100.0, // "BPM" virtual.
+		noteSpeed:   0.7,   // kecepatan visual not.
+		lastFrame:   time.Now(),
+		songChart:   make([]*Note, 0),
+		hitZoneY:    338,
+	}
 }
 
 func (g *MainScene) ExportProperties() (prop Properties) {
@@ -91,9 +113,74 @@ func (g *MainScene) ExportProperties() (prop Properties) {
 
 func (g *MainScene) FirstLoad() {
 
-	g.state = inGamePlay
+	g.state = inGameMenu
+	g.loadCount = 0
+	g.loadTotal = 19
+
+	var err error
+
+	// fonts
+	g.loadCount++
+	g.fontSource, err = text.NewGoTextFaceSource(bytes.NewReader(fonts.Font_otf))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// note
+	g.loadCount++
+	img, _, err := image.Decode(bytes.NewReader(images.Man1_ico_png))
+	if err != nil {
+		log.Fatal(err)
+	}
+	g.noteMan1Image = ebiten.NewImageFromImage(img)
+
+	g.loadCount++
+	img, _, err = image.Decode(bytes.NewReader(images.Man2_ico_png))
+	if err != nil {
+		log.Fatal(err)
+	}
+	g.noteMan2Image = ebiten.NewImageFromImage(img)
+
+	g.loadCount++
+	img, _, err = image.Decode(bytes.NewReader(images.Man3_ico_png))
+	if err != nil {
+		log.Fatal(err)
+	}
+	g.noteMan3Image = ebiten.NewImageFromImage(img)
+
+	g.loadCount++
+	g.bgNoteImage = ebiten.NewImage(noteLineWidth*3, NoteHeight)
+	g.bgNoteImage.Fill(color.Black)
+
+	g.loadCount++
+	g.noteImage = ebiten.NewImage(int(noteLineWidth), 8)
+	g.noteImage.Fill(color.White)
+
+	g.loadCount++
+	g.hitZoneLine = ebiten.NewImage(noteLineWidth, 4)
+	g.hitZoneLine.Fill(color.RGBA{255, 255, 255, 128})
+
+	g.loadCount++
+	g.lanes = []Instrument{
+		{Key: ebiten.KeyLeft, Color: color.RGBA{150, 75, 0, 255},
+			TouchRange: image.Rect(500, 348, 536, 374),
+		}, // Soklat
+		{Key: ebiten.KeyDown, Color: color.RGBA{255, 255, 255, 255},
+			TouchRange: image.Rect(547, 348, 581, 374),
+		}, // Putih
+		{Key: ebiten.KeyRight, Color: color.RGBA{100, 255, 100, 255},
+			TouchRange: image.Rect(586, 348, 621, 374),
+		}, // Hijau
+	}
+
+	g.loadCount++
+	err = json.Unmarshal(notes.Note_json, &g.songChart)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// audio
+	g.loadCount++
 	if g.AudioContext == nil {
 		if audio.CurrentContext() != nil {
 			g.AudioContext = audio.CurrentContext()
@@ -102,6 +189,7 @@ func (g *MainScene) FirstLoad() {
 		}
 	}
 
+	g.loadCount++
 	gMp3, err := mp3.DecodeF32(bytes.NewReader(sounds.Guitar_mp3))
 	if err != nil {
 		log.Fatal(err)
@@ -113,6 +201,7 @@ func (g *MainScene) FirstLoad() {
 	g.GuitarAudio = g.AudioContext.NewPlayerF32FromBytes(sfx)
 	g.GuitarAudio.SetVolume(0)
 
+	g.loadCount++
 	dMp3, err := mp3.DecodeF32(bytes.NewReader(sounds.Drums_mp3))
 	if err != nil {
 		log.Fatal(err)
@@ -124,6 +213,7 @@ func (g *MainScene) FirstLoad() {
 	g.DrumsAudio = g.AudioContext.NewPlayerF32FromBytes(sfx)
 	g.DrumsAudio.SetVolume(0)
 
+	g.loadCount++
 	bMp3, err := mp3.DecodeF32(bytes.NewReader(sounds.Bass_mp3))
 	if err != nil {
 		log.Fatal(err)
@@ -136,24 +226,35 @@ func (g *MainScene) FirstLoad() {
 	g.BassAudio.SetVolume(0)
 
 	// images
-	img, _, err := image.Decode(bytes.NewReader(images.Garage_png))
+	g.loadCount++
+	img, _, err = image.Decode(bytes.NewReader(images.Sky_png))
+	if err != nil {
+		log.Fatal(err)
+	}
+	g.sky = ebiten.NewImageFromImage(img)
+
+	g.loadCount++
+	img, _, err = image.Decode(bytes.NewReader(images.Garage_png))
 	if err != nil {
 		log.Fatal(err)
 	}
 	g.garage = ebiten.NewImageFromImage(img)
 
+	g.loadCount++
 	img, _, err = image.Decode(bytes.NewReader(images.Door_png))
 	if err != nil {
 		log.Fatal(err)
 	}
 	g.garageDoor = ebiten.NewImageFromImage(img)
 
+	g.loadCount++
 	img, _, err = image.Decode(bytes.NewReader(images.Inside_png))
 	if err != nil {
 		log.Fatal(err)
 	}
 	g.garageInside = ebiten.NewImageFromImage(img)
 
+	g.loadCount++
 	img, _, err = image.Decode(bytes.NewReader(images.Man1_png))
 	if err != nil {
 		log.Fatal(err)
@@ -168,6 +269,7 @@ func (g *MainScene) FirstLoad() {
 		Animations: animations.NewAnimationHorizotal(0, 1, 32),
 	}
 
+	g.loadCount++
 	img, _, err = image.Decode(bytes.NewReader(images.Man2_png))
 	if err != nil {
 		log.Fatal(err)
@@ -182,6 +284,7 @@ func (g *MainScene) FirstLoad() {
 		Animations: animations.NewAnimationHorizotal(0, 1, 32),
 	}
 
+	g.loadCount++
 	img, _, err = image.Decode(bytes.NewReader(images.Man3_png))
 	if err != nil {
 		log.Fatal(err)
@@ -196,28 +299,7 @@ func (g *MainScene) FirstLoad() {
 		Animations: animations.NewAnimationHorizotal(0, 1, 32),
 	}
 
-	// note
-	img, _, err = image.Decode(bytes.NewReader(images.Man1_ico_png))
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.noteMan1Image = ebiten.NewImageFromImage(img)
-
-	img, _, err = image.Decode(bytes.NewReader(images.Man2_ico_png))
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.noteMan2Image = ebiten.NewImageFromImage(img)
-
-	img, _, err = image.Decode(bytes.NewReader(images.Man3_ico_png))
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.noteMan3Image = ebiten.NewImageFromImage(img)
-
-	g.bgNoteImage = ebiten.NewImage(noteLineWidth*3, NoteHeight)
-	g.bgNoteImage.Fill(color.Black)
-
+	g.state = inGamePlay
 	g.isLoaded = true
 }
 
@@ -248,6 +330,10 @@ func (g *MainScene) Update() SceneId {
 }
 
 func (g *MainScene) UpdateInGameMenu() {
+	if !g.isLoaded {
+		g.loadPercent = int(float64(g.loadCount) / float64(g.loadTotal) * 100)
+		return
+	}
 	g.BassAudio.Pause()
 	g.GuitarAudio.Pause()
 	g.DrumsAudio.Pause()
@@ -261,8 +347,116 @@ func (g *MainScene) UpdateInGamePlay() {
 	g.Man2.Animations.Update()
 	g.Man3.Animations.Update()
 
+	// Hitung delta time untuk pergerakan yang konsisten.
+	dt := time.Since(g.lastFrame).Seconds()
+	g.lastFrame = time.Now()
+
+	// Majukan posisi waktu lagu.
+	g.currentTick += g.ticksPerSec * dt
+	// Perbarui posisi Y setiap not dan cek jika terlewat.
+	for _, note := range g.songChart {
+		if !note.IsActive {
+			continue
+		}
+
+		// Hitung posisi Y berdasarkan seberapa jauh not dari waktu saat ini.
+		// Not akan berada di hitZoneY saat note.Tick == g.currentTick.
+		tickDifference := note.Tick - g.currentTick
+		note.YPosition = g.hitZoneY - (tickDifference * g.noteSpeed)
+
+		// Cek jika not terlewat (sudah melewati zona penilaian).
+		if note.YPosition > (NoteY + NoteHeight) {
+			note.IsActive = false
+
+			switch note.Lane {
+			case GuitarLaneId:
+				g.GuitarAudio.SetVolume(0)
+			case DrumsLaneId:
+				g.DrumsAudio.SetVolume(0)
+			case BassLaneId:
+				g.BassAudio.SetVolume(0)
+			}
+		}
+	}
+
+	// Handle input
+	// Toleransi waktu untuk penilaian (dalam tick).
+	perfectWindow := 10.0
+	goodWindow := 20.0
+
+	cX, cY := 0, 0
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		cX, cY = ebiten.CursorPosition()
+	}
+	g.touchIDs = ebiten.AppendTouchIDs(g.touchIDs[:0])
+	if len(g.touchIDs) > 0 {
+		cX, cY = ebiten.TouchPosition(g.touchIDs[0])
+	}
+	cs := image.Rect(cX, cY, cX+5, cY+5)
+
+	g.isNoteMan1Pressed = false
+	g.isNoteMan2Pressed = false
+	g.isNoteMan3Pressed = false
+	if ebiten.IsKeyPressed(ebiten.KeyLeft) || cs.In(g.lanes[0].TouchRange) {
+		g.isNoteMan1Pressed = true
+	}
+	if ebiten.IsKeyPressed(ebiten.KeyRight) || cs.In(g.lanes[2].TouchRange) {
+		g.isNoteMan2Pressed = true
+	}
+	if ebiten.IsKeyPressed(ebiten.KeyDown) || cs.In(g.lanes[1].TouchRange) {
+		g.isNoteMan3Pressed = true
+	}
+
+	for i, lane := range g.lanes {
+		// Cek jika tombol untuk lajur ini baru saja ditekan.
+		if inpututil.IsKeyJustPressed(lane.Key) || cs.In(lane.TouchRange) {
+			var bestNote *Note
+			minTickDiff := math.Inf(1)
+
+			// Cari not aktif terdekat di lajur yang ditekan.
+			for _, note := range g.songChart {
+				if note.IsActive && int(note.Lane) == i {
+					tickDiff := math.Abs(note.Tick - g.currentTick)
+					if tickDiff < minTickDiff {
+						minTickDiff = tickDiff
+						bestNote = note
+						break
+					}
+				}
+			}
+
+			// Jika ada not yang ditemukan dalam jangkauan.
+			if bestNote != nil {
+				if minTickDiff <= perfectWindow {
+					fmt.Println("PERFECT!")
+					g.score += 100
+					bestNote.IsActive = false
+					switch bestNote.Lane {
+					case GuitarLaneId:
+						g.GuitarAudio.SetVolume(1)
+					case DrumsLaneId:
+						g.DrumsAudio.SetVolume(1)
+					case BassLaneId:
+						g.BassAudio.SetVolume(1)
+					}
+				} else if minTickDiff <= goodWindow {
+					fmt.Println("GOOD")
+					g.score += 50
+					bestNote.IsActive = false
+					switch bestNote.Lane {
+					case GuitarLaneId:
+						g.GuitarAudio.SetVolume(1)
+					case DrumsLaneId:
+						g.DrumsAudio.SetVolume(1)
+					case BassLaneId:
+						g.BassAudio.SetVolume(1)
+					}
+				}
+			}
+		}
+	}
+
 	if !g.BassAudio.IsPlaying() {
-		// g.BassAudio.Rewind()
 		g.BassAudio.Play()
 		g.GuitarAudio.Play()
 		g.DrumsAudio.Play()
@@ -271,29 +465,9 @@ func (g *MainScene) UpdateInGamePlay() {
 		g.DrumsAudio.SetVolume(1)
 	}
 
-	if ebiten.IsKeyPressed(ebiten.KeySpace) {
-		g.GuitarAudio.SetVolume(0)
-	}
-	if ebiten.IsKeyPressed(ebiten.KeyQ) {
-		g.GuitarAudio.SetVolume(1)
-	}
-
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		cX, cY := ebiten.CursorPosition()
 		fmt.Println(cX, cY)
-	}
-
-	g.isNoteMan1Pressed = false
-	g.isNoteMan2Pressed = false
-	g.isNoteMan3Pressed = false
-	if ebiten.IsKeyPressed(ebiten.KeyLeft) {
-		g.isNoteMan1Pressed = true
-	}
-	if ebiten.IsKeyPressed(ebiten.KeyRight) {
-		g.isNoteMan2Pressed = true
-	}
-	if ebiten.IsKeyPressed(ebiten.KeyDown) {
-		g.isNoteMan3Pressed = true
 	}
 
 }
@@ -313,6 +487,11 @@ func (g *MainScene) Draw(screen *ebiten.Image) {
 }
 
 func (g *MainScene) DrawInGameMenu(screen *ebiten.Image) {
+
+	if !g.isLoaded {
+		ebitenutil.DebugPrintAt(screen, fmt.Sprintf("Loading %d", g.loadPercent)+"%", (constants.ScreenWidth-70)/2, (constants.ScreenHeight-30)/2)
+		return
+	}
 
 	op := &ebiten.DrawImageOptions{}
 
@@ -410,6 +589,54 @@ func (g *MainScene) DrawInGamePlay(screen *ebiten.Image) {
 	screen.DrawImage(g.noteMan2Image, op)
 	op.GeoM.Reset()
 
+	// Gambar tombol statis di zona penilaian.
+	for i, lane := range g.lanes {
+		x := firstNoteX + (noteLineWidth * i)
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Translate(float64(x), g.hitZoneY-float64(g.noteImage.Bounds().Dy())/2)
+		op.ColorScale.ScaleWithColor(lane.Color)
+		switch i {
+		case int(GuitarLaneId):
+			if g.isNoteMan1Pressed {
+				op.ColorScale.ScaleAlpha(0.8)
+			} else {
+				op.ColorScale.ScaleAlpha(0.4) // Buat lebih transparan
+			}
+		case int(BassLaneId):
+			if g.isNoteMan2Pressed {
+				op.ColorScale.ScaleAlpha(0.8)
+			} else {
+				op.ColorScale.ScaleAlpha(0.4) // Buat lebih transparan
+			}
+		case int(DrumsLaneId):
+			if g.isNoteMan3Pressed {
+				op.ColorScale.ScaleAlpha(0.8)
+			} else {
+				op.ColorScale.ScaleAlpha(0.4) // Buat lebih transparan
+			}
+		}
+		screen.DrawImage(g.noteImage, op)
+	}
+
+	// Gambar setiap not yang masih aktif.
+	for _, note := range g.songChart {
+		if !note.IsActive {
+			continue
+		}
+		if note.YPosition < NoteY {
+			continue
+		}
+		op := &ebiten.DrawImageOptions{}
+		// Hitung posisi X berdasarkan lajur not.
+		noteX := firstNoteX + (noteLineWidth * float64(note.Lane))
+		// Pusatkan not di tengah lajur.
+		op.GeoM.Translate(noteX, note.YPosition-float64(g.noteImage.Bounds().Dy())/2)
+
+		// Beri warna not sesuai dengan lajurnya.
+		op.ColorScale.ScaleWithColor(g.lanes[note.Lane].Color)
+
+		screen.DrawImage(g.noteImage, op)
+	}
 }
 func (g *MainScene) DrawInGameFinish(screen *ebiten.Image) {
 

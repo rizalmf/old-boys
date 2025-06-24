@@ -25,6 +25,5 @@ type Scene interface {
 }
 
 type Properties struct {
-	Vehicle string
-	Lang    lang.Lang
+	Lang lang.Lang
 }

@@ -1,11 +1,18 @@
 package scenes
 
+import (
+	"image"
+	"image/color"
+
+	"github.com/hajimehoshi/ebiten/v2"
+)
+
 type LaneId uint
 
 const (
-	BassLaneId LaneId = iota
-	GuitarLaneId
+	GuitarLaneId LaneId = iota
 	DrumsLaneId
+	BassLaneId
 )
 
 type Note struct {
@@ -15,12 +22,8 @@ type Note struct {
 	YPosition float64 // Posisi Y not di layar saat ini.
 }
 
-func NewNoteChart() []Note {
-	return []Note{
-		{
-			Lane:     BassLaneId,
-			Tick:     0,
-			IsActive: true,
-		},
-	}
+type Instrument struct {
+	Key        ebiten.Key      // Keyboard
+	Color      color.Color     // Warna Instrument
+	TouchRange image.Rectangle // Range mouse/touchscreen
 }

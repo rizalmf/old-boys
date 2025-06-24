@@ -5,10 +5,14 @@ import (
 )
 
 var (
+
+	//go:embed sky.png
+	Sky_png []byte
+
 	//go:embed door.png
 	Door_png []byte
 
-	//go:embed garage.png
+	//go:embed garage2.png
 	Garage_png []byte
 
 	//go:embed inside.png

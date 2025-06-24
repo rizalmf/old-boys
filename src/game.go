@@ -24,7 +24,7 @@ func NewGame() *Game {
 		},
 		activeSceneId: scenes.GameSceneId,
 	}
-	g.sceneMap[g.activeSceneId].FirstLoad()
+	go g.sceneMap[g.activeSceneId].FirstLoad()
 
 	return g
 }
