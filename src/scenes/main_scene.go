@@ -689,6 +689,37 @@ func (g *MainScene) UpdateInGameFinish() {
 			g.isFinishAnim = true
 		}
 	}
+
+	if g.isFinishAnim {
+		g.touchIDs = ebiten.AppendTouchIDs(g.touchIDs[:0])
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) || len(g.touchIDs) > 0 {
+			g.Reset()
+		}
+	}
+}
+
+func (g *MainScene) Reset() {
+	// change state
+	g.state = inGameMenu
+	// scoring
+	g.scoreVal = 0
+	g.score.guitarScore.perfect = 0
+	g.score.guitarScore.good = 0
+	g.score.guitarScore.miss = 0
+	g.score.drumScore.perfect = 0
+	g.score.drumScore.good = 0
+	g.score.drumScore.miss = 0
+	g.score.bassScore.perfect = 0
+	g.score.bassScore.good = 0
+	g.score.bassScore.miss = 0
+	// reset menu
+
+	// reset gameplay
+
+	// reset finish
+	g.finishAnimY = 0
+	g.finishAnimActive = true
+	g.isFinishAnim = false
 }
 func (g *MainScene) Draw(screen *ebiten.Image) {
 
@@ -1033,7 +1064,7 @@ func (g *MainScene) DrawInGameFinish(screen *ebiten.Image) {
 		screen.DrawImage(g.noteMan3Image, op)
 		op.GeoM.Reset()
 
-		x += 145
+		x += 130
 		op.GeoM.Translate(0, 0)
 		op.GeoM.Scale(scale, scale)
 		op.GeoM.Translate(x, y)
@@ -1060,7 +1091,7 @@ func (g *MainScene) DrawInGameFinish(screen *ebiten.Image) {
 		// scoring
 		x1 := 200.0
 		x2 := 335.0
-		x3 := 475.0
+		x3 := 460.0
 		y1 := 160.0
 		y2 := 225.0
 		y3 := 285.0
@@ -1163,11 +1194,60 @@ func (g *MainScene) DrawInGameFinish(screen *ebiten.Image) {
 		}, opt)
 		opt.GeoM.Reset()
 
+		x3 += 80
+		finalScore := (g.score.guitarScore.perfect + g.score.drumScore.perfect + g.score.bassScore.perfect) * int(g.score.perfectNote)
+		texts = fmt.Sprintf("=    %d", finalScore)
+		opt.GeoM.Translate(x3, y1)
+		opt.ColorScale.ScaleWithColor(color.Black)
+		opt.LineSpacing = fontSize * 1.5
+		opt.PrimaryAlign = text.AlignStart
+		text.Draw(screen, texts, &text.GoTextFace{
+			Source: g.fontSource,
+			Size:   fontSize,
+		}, opt)
 		opt.GeoM.Reset()
-		texts = fmt.Sprintf("X%d", g.score.bassScore.miss)
+
+		finalScore = (g.score.guitarScore.good + g.score.drumScore.good + g.score.bassScore.good) * int(g.score.goodNote)
+		texts = fmt.Sprintf("=    %d", finalScore)
+		opt.GeoM.Translate(x3, y2)
+		opt.ColorScale.ScaleWithColor(color.Black)
+		opt.LineSpacing = fontSize * 1.5
+		opt.PrimaryAlign = text.AlignStart
+		text.Draw(screen, texts, &text.GoTextFace{
+			Source: g.fontSource,
+			Size:   fontSize,
+		}, opt)
+		opt.GeoM.Reset()
+
+		finalScore = (g.score.guitarScore.miss + g.score.drumScore.miss + g.score.bassScore.miss) * int(g.score.missNote)
+		texts = fmt.Sprintf("=    %d", finalScore)
 		opt.GeoM.Translate(x3, y3)
 		opt.ColorScale.ScaleWithColor(color.Black)
 		opt.LineSpacing = fontSize * 1.5
+		opt.PrimaryAlign = text.AlignStart
+		text.Draw(screen, texts, &text.GoTextFace{
+			Source: g.fontSource,
+			Size:   fontSize,
+		}, opt)
+		opt.GeoM.Reset()
+
+		fontSize *= 1.5
+		texts = fmt.Sprintf("TOTAL SCORE   %d", g.scoreVal)
+		opt.GeoM.Translate(x2, y3+50)
+		opt.ColorScale.ScaleWithColor(color.Black)
+		opt.LineSpacing = fontSize * 1.5
+		opt.PrimaryAlign = text.AlignCenter
+		text.Draw(screen, texts, &text.GoTextFace{
+			Source: g.fontSource,
+			Size:   fontSize,
+		}, opt)
+		opt.GeoM.Reset()
+
+		fontSize = 14
+		texts = "Press Enter/Click/Touch\nFor Back To Menu"
+		opt.GeoM.Translate(565, 350)
+		opt.ColorScale.ScaleWithColor(color.Black)
+		opt.LineSpacing = fontSize * 1.2
 		opt.PrimaryAlign = text.AlignStart
 		text.Draw(screen, texts, &text.GoTextFace{
 			Source: g.fontSource,
