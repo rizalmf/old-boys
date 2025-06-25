@@ -72,19 +72,24 @@ type MainScene struct {
 	isVeryBegin bool
 
 	// Images
-	Man1             entities.Char
-	Man2             entities.Char
-	Man3             entities.Char
-	sky              *ebiten.Image
-	skyOffset        float64
-	garageAndSky     *ebiten.Image
-	garage           *ebiten.Image
-	garageDoor       *ebiten.Image
-	garageInside     *ebiten.Image
+	Man1         entities.Char
+	Man2         entities.Char
+	Man3         entities.Char
+	sky          *ebiten.Image
+	skyOffset    float64
+	garageAndSky *ebiten.Image
+	garage       *ebiten.Image
+	garageDoor   *ebiten.Image
+	garageInside *ebiten.Image
+	// Menu Animation
 	garageAnimY      float64
 	garageAnimActive bool
 	doorAnimY        float64
 	doorAnimActive   bool
+	// Finish Animation
+	finishAnimY      float64
+	finishAnimActive bool
+	isFinishAnim     bool
 
 	// Audio
 	BassAudio    *audio.Player
@@ -127,9 +132,9 @@ func NewGameScene() *MainScene {
 	return &MainScene{
 		ticksPerSec: 100.0, // "BPM" virtual.
 		noteSpeed:   0.7,   // kecepatan visual not.
-		// lastFrame:   time.Now(),
-		songChart: make([]*Note, 0),
-		hitZoneY:  338,
+		lastFrame:   time.Now(),
+		songChart:   make([]*Note, 0),
+		hitZoneY:    338,
 	}
 }
 
@@ -141,7 +146,7 @@ func (g *MainScene) ExportProperties() (prop Properties) {
 func (g *MainScene) FirstLoad() {
 
 	g.isVeryBegin = true
-	g.state = inGameMenu
+	g.state = inGameFinish
 	g.loadCount = 0
 	g.loadTotal = 25
 	g.score = Score{
@@ -380,6 +385,11 @@ func (g *MainScene) FirstLoad() {
 	g.doorAnimY = 0
 	g.doorAnimActive = false
 
+	// Initialize finish animation
+	g.finishAnimY = 0
+	g.finishAnimActive = true
+	g.isFinishAnim = false
+
 	// g.state = inGamePlay
 	g.isLoaded = true
 }
@@ -397,6 +407,11 @@ func (g *MainScene) OnExit() {
 }
 
 func (g *MainScene) Update() SceneId {
+
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
+		cX, cY := ebiten.CursorPosition()
+		fmt.Println(cX, cY)
+	}
 
 	if !g.isLoaded {
 		g.loadPercent = int(float64(g.loadCount) / float64(g.loadTotal) * 100)
@@ -417,11 +432,6 @@ func (g *MainScene) Update() SceneId {
 
 func (g *MainScene) UpdateInGameMenu() {
 
-	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
-		cX, cY := ebiten.CursorPosition()
-		fmt.Println(cX, cY)
-		return
-	}
 	if !g.garageAnimActive && g.isVeryBegin {
 		g.touchIDs = ebiten.AppendTouchIDs(g.touchIDs[:0])
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) || len(g.touchIDs) > 0 {
@@ -501,7 +511,11 @@ func (g *MainScene) UpdateInGamePlay() {
 	// Majukan posisi waktu lagu.
 	g.currentTick += g.ticksPerSec * dt
 	// Perbarui posisi Y setiap not dan cek jika terlewat.
+	highestTick := 0.0
 	for _, note := range g.songChart {
+		if note.Tick > highestTick {
+			highestTick = note.Tick
+		}
 		if !note.IsActive {
 			continue
 		}
@@ -537,6 +551,10 @@ func (g *MainScene) UpdateInGamePlay() {
 				g.Man2.CurrentMarkTime = 0
 			}
 		}
+	}
+
+	if highestTick+300 < g.currentTick {
+		g.state = inGameFinish
 	}
 
 	// Handle input
@@ -649,7 +667,28 @@ func (g *MainScene) UpdateInGamePlay() {
 
 }
 func (g *MainScene) UpdateInGameFinish() {
+	g.Man1.Animations.Update()
+	g.Man2.Animations.Update()
+	g.Man3.Animations.Update()
+	dt := time.Since(g.lastFrame).Seconds()
+	g.lastFrame = time.Now()
 
+	g.skyOffset -= 20 * dt
+	if g.skyOffset <= -constants.ScreenWidth {
+		g.skyOffset += constants.ScreenWidth
+	}
+
+	// Update finish animation
+	if g.finishAnimActive && !g.isFinishAnim {
+		speed := 1.0
+		g.finishAnimY += speed
+		// Stop animation when elements reach bottom of screen
+		if g.finishAnimY >= float64(constants.ScreenHeight) {
+			g.finishAnimY = float64(constants.ScreenHeight)
+			g.finishAnimActive = false
+			g.isFinishAnim = true
+		}
+	}
 }
 func (g *MainScene) Draw(screen *ebiten.Image) {
 
@@ -931,7 +970,211 @@ func (g *MainScene) DrawInGamePlay(screen *ebiten.Image) {
 	}
 }
 func (g *MainScene) DrawInGameFinish(screen *ebiten.Image) {
+	op := &ebiten.DrawImageOptions{}
 
+	off := g.skyOffset
+	for i := range 2 {
+		op.GeoM.Translate(off+float64(i*constants.ScreenWidth), 0)
+		screen.DrawImage(g.sky, op)
+		op.GeoM.Reset()
+	}
+
+	// garage with animation offset
+	op.GeoM.Translate(0, g.finishAnimY)
+	screen.DrawImage(g.garageInside, op)
+	op.GeoM.Reset()
+
+	op.GeoM.Translate(0, g.finishAnimY)
+	screen.DrawImage(g.garage, op)
+	op.GeoM.Reset()
+
+	// boys with animation offset
+	op.GeoM.Translate(g.Man3.X, g.Man3.Y+g.finishAnimY)
+	Frame, _ := g.Man3.Animations.Frame()
+	op.ColorScale.Reset()
+	screen.DrawImage(g.Man3.Image.SubImage(
+		g.Man3.Sheet.HorizontalRect(Frame),
+	).(*ebiten.Image), op)
+	op.GeoM.Reset()
+
+	op.GeoM.Translate(g.Man1.X, g.Man1.Y+g.finishAnimY)
+	Frame, _ = g.Man1.Animations.Frame()
+	op.ColorScale.Reset()
+	screen.DrawImage(g.Man1.Image.SubImage(
+		g.Man1.Sheet.HorizontalRect(Frame),
+	).(*ebiten.Image), op)
+	op.GeoM.Reset()
+
+	op.GeoM.Translate(g.Man2.X, g.Man2.Y+g.finishAnimY)
+	Frame, _ = g.Man2.Animations.Frame()
+	op.ColorScale.Reset()
+	screen.DrawImage(g.Man2.Image.SubImage(
+		g.Man2.Sheet.HorizontalRect(Frame),
+	).(*ebiten.Image), op)
+	op.GeoM.Reset()
+
+	// panel
+	if g.isFinishAnim {
+		x := 180.0
+		y := 70.0
+		scale := 1.0 / 1.3
+
+		// instrument
+		op.GeoM.Translate(0, 0)
+		op.GeoM.Scale(scale, scale)
+		op.GeoM.Translate(x, y)
+		screen.DrawImage(g.noteMan1Image, op)
+		op.GeoM.Reset()
+
+		x += 135
+		op.GeoM.Translate(0, 0)
+		op.GeoM.Scale(scale, scale)
+		op.GeoM.Translate(x, y)
+		screen.DrawImage(g.noteMan3Image, op)
+		op.GeoM.Reset()
+
+		x += 145
+		op.GeoM.Translate(0, 0)
+		op.GeoM.Scale(scale, scale)
+		op.GeoM.Translate(x, y)
+		screen.DrawImage(g.noteMan2Image, op)
+		op.GeoM.Reset()
+
+		// mark
+		x = 70
+		y = 155
+		op.GeoM.Translate(x, y)
+		screen.DrawImage(g.markPerfectImage, op)
+		op.GeoM.Reset()
+
+		y += 65
+		op.GeoM.Translate(x, y)
+		screen.DrawImage(g.markGoodImage, op)
+		op.GeoM.Reset()
+
+		y += 65
+		op.GeoM.Translate(x, y)
+		screen.DrawImage(g.markMissImage, op)
+		op.GeoM.Reset()
+
+		// scoring
+		x1 := 200.0
+		x2 := 335.0
+		x3 := 475.0
+		y1 := 160.0
+		y2 := 225.0
+		y3 := 285.0
+		var fontSize float64 = 32
+		opt := &text.DrawOptions{}
+
+		// guitar
+		texts := fmt.Sprintf("X%d", g.score.guitarScore.perfect)
+		opt.GeoM.Translate(x1, y1)
+		opt.ColorScale.ScaleWithColor(color.Black)
+		opt.LineSpacing = fontSize * 1.5
+		opt.PrimaryAlign = text.AlignStart
+		text.Draw(screen, texts, &text.GoTextFace{
+			Source: g.fontSource,
+			Size:   fontSize,
+		}, opt)
+		opt.GeoM.Reset()
+		texts = fmt.Sprintf("X%d", g.score.guitarScore.good)
+		opt.GeoM.Translate(x1, y2)
+		opt.ColorScale.ScaleWithColor(color.Black)
+		opt.LineSpacing = fontSize * 1.5
+		opt.PrimaryAlign = text.AlignStart
+		text.Draw(screen, texts, &text.GoTextFace{
+			Source: g.fontSource,
+			Size:   fontSize,
+		}, opt)
+		opt.GeoM.Reset()
+		texts = fmt.Sprintf("X%d", g.score.guitarScore.miss)
+		opt.GeoM.Translate(x1, y3)
+		opt.ColorScale.ScaleWithColor(color.Black)
+		opt.LineSpacing = fontSize * 1.5
+		opt.PrimaryAlign = text.AlignStart
+		text.Draw(screen, texts, &text.GoTextFace{
+			Source: g.fontSource,
+			Size:   fontSize,
+		}, opt)
+		opt.GeoM.Reset()
+
+		// drums
+		texts = fmt.Sprintf("X%d", g.score.drumScore.perfect)
+		opt.GeoM.Translate(x2, y1)
+		opt.ColorScale.ScaleWithColor(color.Black)
+		opt.LineSpacing = fontSize * 1.5
+		opt.PrimaryAlign = text.AlignStart
+		text.Draw(screen, texts, &text.GoTextFace{
+			Source: g.fontSource,
+			Size:   fontSize,
+		}, opt)
+		opt.GeoM.Reset()
+		texts = fmt.Sprintf("X%d", g.score.drumScore.good)
+		opt.GeoM.Translate(x2, y2)
+		opt.ColorScale.ScaleWithColor(color.Black)
+		opt.LineSpacing = fontSize * 1.5
+		opt.PrimaryAlign = text.AlignStart
+		text.Draw(screen, texts, &text.GoTextFace{
+			Source: g.fontSource,
+			Size:   fontSize,
+		}, opt)
+		opt.GeoM.Reset()
+		texts = fmt.Sprintf("X%d", g.score.drumScore.miss)
+		opt.GeoM.Translate(x2, y3)
+		opt.ColorScale.ScaleWithColor(color.Black)
+		opt.LineSpacing = fontSize * 1.5
+		opt.PrimaryAlign = text.AlignStart
+		text.Draw(screen, texts, &text.GoTextFace{
+			Source: g.fontSource,
+			Size:   fontSize,
+		}, opt)
+		opt.GeoM.Reset()
+
+		// bass
+		texts = fmt.Sprintf("X%d", g.score.bassScore.perfect)
+		opt.GeoM.Translate(x3, y1)
+		opt.ColorScale.ScaleWithColor(color.Black)
+		opt.LineSpacing = fontSize * 1.5
+		opt.PrimaryAlign = text.AlignStart
+		text.Draw(screen, texts, &text.GoTextFace{
+			Source: g.fontSource,
+			Size:   fontSize,
+		}, opt)
+		opt.GeoM.Reset()
+		texts = fmt.Sprintf("X%d", g.score.bassScore.good)
+		opt.GeoM.Translate(x3, y2)
+		opt.ColorScale.ScaleWithColor(color.Black)
+		opt.LineSpacing = fontSize * 1.5
+		opt.PrimaryAlign = text.AlignStart
+		text.Draw(screen, texts, &text.GoTextFace{
+			Source: g.fontSource,
+			Size:   fontSize,
+		}, opt)
+		opt.GeoM.Reset()
+		texts = fmt.Sprintf("X%d", g.score.bassScore.miss)
+		opt.GeoM.Translate(x3, y3)
+		opt.ColorScale.ScaleWithColor(color.Black)
+		opt.LineSpacing = fontSize * 1.5
+		opt.PrimaryAlign = text.AlignStart
+		text.Draw(screen, texts, &text.GoTextFace{
+			Source: g.fontSource,
+			Size:   fontSize,
+		}, opt)
+		opt.GeoM.Reset()
+
+		opt.GeoM.Reset()
+		texts = fmt.Sprintf("X%d", g.score.bassScore.miss)
+		opt.GeoM.Translate(x3, y3)
+		opt.ColorScale.ScaleWithColor(color.Black)
+		opt.LineSpacing = fontSize * 1.5
+		opt.PrimaryAlign = text.AlignStart
+		text.Draw(screen, texts, &text.GoTextFace{
+			Source: g.fontSource,
+			Size:   fontSize,
+		}, opt)
+		opt.GeoM.Reset()
+	}
 }
 
 var _ Scene = (*MainScene)(nil)
