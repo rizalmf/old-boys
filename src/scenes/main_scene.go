@@ -15,7 +15,6 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/audio"
 	"github.com/hajimehoshi/ebiten/v2/audio/mp3"
-	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
@@ -34,6 +33,7 @@ const (
 	inGameMenu inGameState = iota
 	inGamePlay
 	inGameFinish
+	inGameLoading
 )
 
 const (
@@ -145,8 +145,9 @@ func (g *MainScene) ExportProperties() (prop Properties) {
 
 func (g *MainScene) FirstLoad() {
 
+	// do nothing
 	g.isVeryBegin = true
-	g.state = inGameMenu
+	g.state = inGameLoading
 	g.loadCount = 0
 	g.loadTotal = 25
 	g.score = Score{
@@ -389,7 +390,7 @@ func (g *MainScene) FirstLoad() {
 	g.finishAnimActive = true
 	g.isFinishAnim = false
 
-	// g.state = inGamePlay
+	g.state = inGameMenu
 	g.isLoaded = true
 }
 
@@ -412,11 +413,6 @@ func (g *MainScene) Update() SceneId {
 		fmt.Println(cX, cY)
 	}
 
-	if !g.isLoaded {
-		g.loadPercent = int(float64(g.loadCount) / float64(g.loadTotal) * 100)
-		return GameSceneId
-	}
-
 	switch g.state {
 	case inGameMenu:
 		g.UpdateInGameMenu()
@@ -424,9 +420,18 @@ func (g *MainScene) Update() SceneId {
 		g.UpdateInGamePlay()
 	case inGameFinish:
 		g.UpdateInGameFinish()
+	case inGameLoading:
+		g.UpdateInGameLoading()
 	}
 
 	return GameSceneId
+}
+
+func (g *MainScene) UpdateInGameLoading() {
+	if !g.isLoaded {
+		g.loadPercent = int(float64(g.loadCount) / float64(g.loadTotal) * 100)
+		return
+	}
 }
 
 func (g *MainScene) UpdateInGameMenu() {
@@ -750,15 +755,6 @@ func (g *MainScene) Reset() {
 }
 func (g *MainScene) Draw(screen *ebiten.Image) {
 
-	if !g.isLoaded {
-		x := (constants.ScreenWidth - 70) / 2
-		y := (constants.ScreenHeight - 30) / 2
-		l := 70
-		ebitenutil.DebugPrintAt(screen, fmt.Sprintf("Loading %d", g.loadPercent)+"%", x, y)
-		vector.StrokeLine(screen, float32(x), float32(y)+20, float32(x)+(float32(l)*float32(g.loadPercent)/100), float32(y)+20, 7, color.White, false)
-		return
-	}
-
 	screen.Fill(color.RGBA{164, 210, 217, 255})
 
 	switch g.state {
@@ -768,6 +764,32 @@ func (g *MainScene) Draw(screen *ebiten.Image) {
 		g.DrawInGamePlay(screen)
 	case inGameFinish:
 		g.DrawInGameFinish(screen)
+	case inGameLoading:
+		g.DrawInGameLoading(screen)
+	}
+}
+
+func (g *MainScene) DrawInGameLoading(screen *ebiten.Image) {
+	if !g.isLoaded {
+		x := float64(constants.ScreenWidth-70) / 2
+		y := float64(constants.ScreenHeight-30) / 2
+		l := 70
+
+		opt := &text.DrawOptions{}
+		fontSize := 18.0
+		texts := fmt.Sprintf("Loading %d", g.loadPercent) + "%"
+		opt.GeoM.Translate(x, y)
+		opt.ColorScale.ScaleWithColor(color.Black)
+		opt.LineSpacing = fontSize * 1.2
+		opt.PrimaryAlign = text.AlignStart
+		text.Draw(screen, texts, &text.GoTextFace{
+			Source: g.fontSource,
+			Size:   fontSize,
+		}, opt)
+		opt.GeoM.Reset()
+
+		vector.StrokeLine(screen, float32(x), float32(y)+25, float32(x)+(float32(l)*float32(g.loadPercent)/100), float32(y)+25, 10, color.Black, false)
+		return
 	}
 }
 
