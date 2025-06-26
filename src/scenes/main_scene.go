@@ -146,7 +146,7 @@ func (g *MainScene) ExportProperties() (prop Properties) {
 func (g *MainScene) FirstLoad() {
 
 	g.isVeryBegin = true
-	g.state = inGameFinish
+	g.state = inGameMenu
 	g.loadCount = 0
 	g.loadTotal = 25
 	g.score = Score{
@@ -385,7 +385,6 @@ func (g *MainScene) FirstLoad() {
 	g.doorAnimY = 0
 	g.doorAnimActive = false
 
-	// Initialize finish animation
 	g.finishAnimY = 0
 	g.finishAnimActive = true
 	g.isFinishAnim = false
@@ -432,6 +431,14 @@ func (g *MainScene) Update() SceneId {
 
 func (g *MainScene) UpdateInGameMenu() {
 
+	dt := time.Since(g.lastFrame).Seconds()
+	g.lastFrame = time.Now()
+
+	g.skyOffset -= 20 * dt
+	if g.skyOffset <= -constants.ScreenWidth {
+		g.skyOffset += constants.ScreenWidth
+	}
+
 	if !g.garageAnimActive && g.isVeryBegin {
 		g.touchIDs = ebiten.AppendTouchIDs(g.touchIDs[:0])
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) || len(g.touchIDs) > 0 {
@@ -457,7 +464,7 @@ func (g *MainScene) UpdateInGameMenu() {
 
 	if g.doorAnimActive {
 		if g.doorAnimY == 0 {
-			g.lastFrame = time.Now().Add(-time.Duration(2.5 * float64(time.Second)))
+			// g.lastFrame = time.Now().Add(-time.Duration(500 * float64(time.Second)))
 		}
 		speed := 1.0
 		g.doorAnimY -= speed
@@ -468,6 +475,7 @@ func (g *MainScene) UpdateInGameMenu() {
 			g.BassAudio.Rewind()
 			g.GuitarAudio.Rewind()
 			g.DrumsAudio.Rewind()
+			g.lastFrame = time.Now().Add(-time.Duration(6.5 * float64(time.Second)))
 		}
 	}
 
@@ -699,8 +707,14 @@ func (g *MainScene) UpdateInGameFinish() {
 }
 
 func (g *MainScene) Reset() {
-	// change state
-	g.state = inGameMenu
+	// sound
+	g.BassAudio.Pause()
+	g.GuitarAudio.Pause()
+	g.DrumsAudio.Pause()
+	g.BassAudio.Rewind()
+	g.GuitarAudio.Rewind()
+	g.DrumsAudio.Rewind()
+
 	// scoring
 	g.scoreVal = 0
 	g.score.guitarScore.perfect = 0
@@ -713,13 +727,26 @@ func (g *MainScene) Reset() {
 	g.score.bassScore.good = 0
 	g.score.bassScore.miss = 0
 	// reset menu
+	g.isVeryBegin = true
+	g.garageAnimY = float64(constants.ScreenHeight)
+	g.garageAnimActive = false
+	g.doorAnimY = 0
+	g.doorAnimActive = false
 
 	// reset gameplay
+	err := json.Unmarshal(notes.Note_json, &g.songChart)
+	if err != nil {
+		log.Fatal(err)
+	}
+	g.currentTick = 0
 
 	// reset finish
 	g.finishAnimY = 0
 	g.finishAnimActive = true
 	g.isFinishAnim = false
+
+	// change state
+	g.state = inGameMenu
 }
 func (g *MainScene) Draw(screen *ebiten.Image) {
 
@@ -731,6 +758,8 @@ func (g *MainScene) Draw(screen *ebiten.Image) {
 		vector.StrokeLine(screen, float32(x), float32(y)+20, float32(x)+(float32(l)*float32(g.loadPercent)/100), float32(y)+20, 7, color.White, false)
 		return
 	}
+
+	screen.Fill(color.RGBA{164, 210, 217, 255})
 
 	switch g.state {
 	case inGameMenu:
@@ -745,13 +774,6 @@ func (g *MainScene) Draw(screen *ebiten.Image) {
 func (g *MainScene) DrawInGameMenu(screen *ebiten.Image) {
 
 	op := &ebiten.DrawImageOptions{}
-
-	off := g.skyOffset
-	for i := range 2 {
-		op.GeoM.Translate(off+float64(i*constants.ScreenWidth), 0)
-		screen.DrawImage(g.sky, op)
-		op.GeoM.Reset()
-	}
 
 	y := g.garageAnimY
 	op.GeoM.Reset()
@@ -806,8 +828,15 @@ func (g *MainScene) DrawInGameMenu(screen *ebiten.Image) {
 	screen.DrawImage(g.garageDoor, op)
 	op.GeoM.Reset()
 
+	off := g.skyOffset
+	for i := range 2 {
+		op.GeoM.Translate(off+float64(i*constants.ScreenWidth), 0)
+		screen.DrawImage(g.sky, op)
+		op.GeoM.Reset()
+	}
+
 	op.GeoM.Translate(0, y)
-	screen.DrawImage(g.garageAndSky, op)
+	screen.DrawImage(g.garage, op)
 	op.GeoM.Reset()
 
 	if g.isVeryBegin {
