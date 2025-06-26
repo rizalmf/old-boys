@@ -59,10 +59,11 @@ type Score struct {
 }
 
 type MainScene struct {
-	isLoaded    bool
-	loadCount   int
-	loadTotal   int
-	loadPercent int
+	isLoaded     bool
+	loadCount    int
+	loadTotal    int
+	loadPercent  int
+	loadingState int // Track which loading batch is being processed
 
 	// Fonts
 	fontSource *text.GoTextFaceSource
@@ -144,254 +145,26 @@ func (g *MainScene) ExportProperties() (prop Properties) {
 }
 
 func (g *MainScene) FirstLoad() {
-
-	// do nothing
+	// Set up initial state
 	g.isVeryBegin = true
 	g.state = inGameLoading
 	g.loadCount = 0
 	g.loadTotal = 25
+	g.loadingState = 0
 	g.score = Score{
 		perfectNote: 100,
 		goodNote:    50,
 		missNote:    0, // tanpa penalty
 	}
 
-	var err error
-
-	// fonts
-	g.loadCount++
-	g.fontSource, err = text.NewGoTextFaceSource(bytes.NewReader(fonts.Font_otf))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// note
-	g.loadCount++
-	img, _, err := image.Decode(bytes.NewReader(images.Man1_ico_png))
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.noteMan1Image = ebiten.NewImageFromImage(img)
-
-	g.loadCount++
-	img, _, err = image.Decode(bytes.NewReader(images.Man2_ico_png))
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.noteMan2Image = ebiten.NewImageFromImage(img)
-
-	g.loadCount++
-	img, _, err = image.Decode(bytes.NewReader(images.Man3_ico_png))
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.noteMan3Image = ebiten.NewImageFromImage(img)
-
-	g.loadCount++
-	g.bgNoteImage = ebiten.NewImage(noteLineWidth*3, NoteHeight)
-	g.bgNoteImage.Fill(color.Black)
-
-	g.loadCount++
-	g.noteImage = ebiten.NewImage(int(noteLineWidth), 8)
-	g.noteImage.Fill(color.White)
-
-	g.loadCount++
-	g.hitZoneLine = ebiten.NewImage(noteLineWidth, 4)
-	g.hitZoneLine.Fill(color.RGBA{255, 255, 255, 128})
-
-	g.loadCount++
-	g.lanes = []Instrument{
-		{Key: ebiten.KeyLeft, Color: color.RGBA{150, 75, 0, 255},
-			TouchRange: image.Rect(500, 348, 536, 374),
-		}, // Soklat
-		{Key: ebiten.KeyDown, Color: color.RGBA{255, 255, 255, 255},
-			TouchRange: image.Rect(547, 348, 581, 374),
-		}, // Putih
-		{Key: ebiten.KeyRight, Color: color.RGBA{100, 255, 100, 255},
-			TouchRange: image.Rect(586, 348, 621, 374),
-		}, // Hijau
-	}
-
-	g.loadCount++
-	err = json.Unmarshal(notes.Note_json, &g.songChart)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// audio
-	g.loadCount++
-	if g.AudioContext == nil {
-		if audio.CurrentContext() != nil {
-			g.AudioContext = audio.CurrentContext()
-		} else {
-			g.AudioContext = audio.NewContext(sounds.Rates)
-		}
-	}
-
-	g.loadCount++
-	gMp3, err := mp3.DecodeF32(bytes.NewReader(sounds.Guitar_mp3))
-	if err != nil {
-		log.Fatal(err)
-	}
-	sfx, err := io.ReadAll(gMp3)
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.GuitarAudio = g.AudioContext.NewPlayerF32FromBytes(sfx)
-	g.GuitarAudio.SetVolume(0)
-
-	g.loadCount++
-	dMp3, err := mp3.DecodeF32(bytes.NewReader(sounds.Drums_mp3))
-	if err != nil {
-		log.Fatal(err)
-	}
-	sfx, err = io.ReadAll(dMp3)
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.DrumsAudio = g.AudioContext.NewPlayerF32FromBytes(sfx)
-	g.DrumsAudio.SetVolume(0)
-
-	g.loadCount++
-	bMp3, err := mp3.DecodeF32(bytes.NewReader(sounds.Bass_mp3))
-	if err != nil {
-		log.Fatal(err)
-	}
-	sfx, err = io.ReadAll(bMp3)
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.BassAudio = g.AudioContext.NewPlayerF32FromBytes(sfx)
-	g.BassAudio.SetVolume(0)
-
-	g.loadCount++
-	grMp3, err := mp3.DecodeF32(bytes.NewReader(sounds.Garage_mp3))
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.GarageSFX, err = io.ReadAll(grMp3)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// images
-	g.loadCount++
-	img, _, err = image.Decode(bytes.NewReader(images.Sky_png))
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.sky = ebiten.NewImageFromImage(img)
-
-	g.loadCount++
-	img, _, err = image.Decode(bytes.NewReader(images.Garage_png))
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.garage = ebiten.NewImageFromImage(img)
-
-	g.loadCount++
-	img, _, err = image.Decode(bytes.NewReader(images.GarageAndSky_png))
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.garageAndSky = ebiten.NewImageFromImage(img)
-
-	g.loadCount++
-	img, _, err = image.Decode(bytes.NewReader(images.Door_png))
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.garageDoor = ebiten.NewImageFromImage(img)
-
-	g.loadCount++
-	img, _, err = image.Decode(bytes.NewReader(images.Inside_png))
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.garageInside = ebiten.NewImageFromImage(img)
-
-	g.loadCount++
-	markTime := 1 * 60
-	img, _, err = image.Decode(bytes.NewReader(images.Man1_png))
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.Man1 = entities.Char{
-		Sprite: &entities.Sprite{
-			Image: ebiten.NewImageFromImage(img),
-			X:     125,
-			Y:     217,
-		},
-		Sheet:      animations.NewSpriteSheet(176, 111),
-		Animations: animations.NewAnimationHorizotal(0, 1, 32),
-		MarkTime:   markTime,
-	}
-
-	g.loadCount++
-	img, _, err = image.Decode(bytes.NewReader(images.Man2_png))
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.Man2 = entities.Char{
-		Sprite: &entities.Sprite{
-			Image: ebiten.NewImageFromImage(img),
-			X:     290,
-			Y:     215,
-		},
-		Sheet:      animations.NewSpriteSheet(176, 111),
-		Animations: animations.NewAnimationHorizotal(0, 1, 32),
-		MarkTime:   markTime,
-	}
-
-	g.loadCount++
-	img, _, err = image.Decode(bytes.NewReader(images.Man3_png))
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.Man3 = entities.Char{
-		Sprite: &entities.Sprite{
-			Image: ebiten.NewImageFromImage(img),
-			X:     203,
-			Y:     218,
-		},
-		Sheet:      animations.NewSpriteSheet(128, 112),
-		Animations: animations.NewAnimationHorizotal(0, 1, 32),
-		MarkTime:   markTime,
-	}
-
-	g.loadCount++
-	img, _, err = image.Decode(bytes.NewReader(images.MarkPerfect_png))
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.markPerfectImage = ebiten.NewImageFromImage(img)
-
-	g.loadCount++
-	img, _, err = image.Decode(bytes.NewReader(images.MarkGood_png))
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.markGoodImage = ebiten.NewImageFromImage(img)
-
-	g.loadCount++
-	img, _, err = image.Decode(bytes.NewReader(images.MarkMiss_png))
-	if err != nil {
-		log.Fatal(err)
-	}
-	g.markMissImage = ebiten.NewImageFromImage(img)
-
+	// Set up animation initial values
 	g.garageAnimY = float64(constants.ScreenHeight)
 	g.garageAnimActive = false
-
 	g.doorAnimY = 0
 	g.doorAnimActive = false
-
 	g.finishAnimY = 0
 	g.finishAnimActive = true
 	g.isFinishAnim = false
-
-	g.state = inGameMenu
-	g.isLoaded = true
 }
 
 func (g *MainScene) IsLoaded() bool {
@@ -428,9 +201,268 @@ func (g *MainScene) Update() SceneId {
 }
 
 func (g *MainScene) UpdateInGameLoading() {
-	if !g.isLoaded {
-		g.loadPercent = int(float64(g.loadCount) / float64(g.loadTotal) * 100)
+	if g.isLoaded {
 		return
+	}
+
+	g.loadPercent = int(float64(g.loadCount) / float64(g.loadTotal) * 100)
+
+	var err error
+
+	switch g.loadingState {
+	case 0:
+		g.loadCount++
+		g.fontSource, err = text.NewGoTextFaceSource(bytes.NewReader(fonts.Font_otf))
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.loadingState++
+
+	case 1:
+		g.loadCount++
+		img, _, err := image.Decode(bytes.NewReader(images.Man1_ico_png))
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.noteMan1Image = ebiten.NewImageFromImage(img)
+
+		g.loadCount++
+		img, _, err = image.Decode(bytes.NewReader(images.Man2_ico_png))
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.noteMan2Image = ebiten.NewImageFromImage(img)
+
+		g.loadCount++
+		img, _, err = image.Decode(bytes.NewReader(images.Man3_ico_png))
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.noteMan3Image = ebiten.NewImageFromImage(img)
+		g.loadingState++
+
+	case 2:
+		g.loadCount++
+		g.bgNoteImage = ebiten.NewImage(noteLineWidth*3, NoteHeight)
+		g.bgNoteImage.Fill(color.Black)
+
+		g.loadCount++
+		g.noteImage = ebiten.NewImage(int(noteLineWidth), 8)
+		g.noteImage.Fill(color.White)
+
+		g.loadCount++
+		g.hitZoneLine = ebiten.NewImage(noteLineWidth, 4)
+		g.hitZoneLine.Fill(color.RGBA{255, 255, 255, 128})
+		g.loadingState++
+
+	case 3:
+		g.loadCount++
+		g.lanes = []Instrument{
+			{Key: ebiten.KeyLeft, Color: color.RGBA{150, 75, 0, 255},
+				TouchRange: image.Rect(500, 348, 536, 374),
+			}, // Soklat
+			{Key: ebiten.KeyDown, Color: color.RGBA{255, 255, 255, 255},
+				TouchRange: image.Rect(547, 348, 581, 374),
+			}, // Putih
+			{Key: ebiten.KeyRight, Color: color.RGBA{100, 255, 100, 255},
+				TouchRange: image.Rect(586, 348, 621, 374),
+			}, // Hijau
+		}
+
+		g.loadCount++
+		err = json.Unmarshal(notes.Note_json, &g.songChart)
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.loadingState++
+
+	case 4:
+		g.loadCount++
+		if g.AudioContext == nil {
+			if audio.CurrentContext() != nil {
+				g.AudioContext = audio.CurrentContext()
+			} else {
+				g.AudioContext = audio.NewContext(sounds.Rates)
+			}
+		}
+		g.loadingState++
+
+	case 5:
+		g.loadCount++
+		gMp3, err := mp3.DecodeF32(bytes.NewReader(sounds.Guitar_mp3))
+		if err != nil {
+			log.Fatal(err)
+		}
+		sfx, err := io.ReadAll(gMp3)
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.GuitarAudio = g.AudioContext.NewPlayerF32FromBytes(sfx)
+		g.GuitarAudio.SetVolume(0)
+		g.loadingState++
+
+	case 6:
+		g.loadCount++
+		dMp3, err := mp3.DecodeF32(bytes.NewReader(sounds.Drums_mp3))
+		if err != nil {
+			log.Fatal(err)
+		}
+		sfx, err := io.ReadAll(dMp3)
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.DrumsAudio = g.AudioContext.NewPlayerF32FromBytes(sfx)
+		g.DrumsAudio.SetVolume(0)
+		g.loadingState++
+
+	case 7:
+		g.loadCount++
+		bMp3, err := mp3.DecodeF32(bytes.NewReader(sounds.Bass_mp3))
+		if err != nil {
+			log.Fatal(err)
+		}
+		sfx, err := io.ReadAll(bMp3)
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.BassAudio = g.AudioContext.NewPlayerF32FromBytes(sfx)
+		g.BassAudio.SetVolume(0)
+		g.loadingState++
+
+	case 8:
+		g.loadCount++
+		grMp3, err := mp3.DecodeF32(bytes.NewReader(sounds.Garage_mp3))
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.GarageSFX, err = io.ReadAll(grMp3)
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.loadingState++
+
+	case 9:
+		g.loadCount++
+		img, _, err := image.Decode(bytes.NewReader(images.Sky_png))
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.sky = ebiten.NewImageFromImage(img)
+
+		g.loadCount++
+		img, _, err = image.Decode(bytes.NewReader(images.Garage_png))
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.garage = ebiten.NewImageFromImage(img)
+
+		g.loadCount++
+		img, _, err = image.Decode(bytes.NewReader(images.GarageAndSky_png))
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.garageAndSky = ebiten.NewImageFromImage(img)
+		g.loadingState++
+
+	case 10:
+		g.loadCount++
+		img, _, err := image.Decode(bytes.NewReader(images.Door_png))
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.garageDoor = ebiten.NewImageFromImage(img)
+
+		g.loadCount++
+		img, _, err = image.Decode(bytes.NewReader(images.Inside_png))
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.garageInside = ebiten.NewImageFromImage(img)
+		g.loadingState++
+
+	case 11:
+		g.loadCount++
+		markTime := 1 * 60
+		img, _, err := image.Decode(bytes.NewReader(images.Man1_png))
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.Man1 = entities.Char{
+			Sprite: &entities.Sprite{
+				Image: ebiten.NewImageFromImage(img),
+				X:     125,
+				Y:     217,
+			},
+			Sheet:      animations.NewSpriteSheet(176, 111),
+			Animations: animations.NewAnimationHorizotal(0, 1, 32),
+			MarkTime:   markTime,
+		}
+		g.loadingState++
+
+	case 12:
+		g.loadCount++
+		markTime := 1 * 60
+		img, _, err := image.Decode(bytes.NewReader(images.Man2_png))
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.Man2 = entities.Char{
+			Sprite: &entities.Sprite{
+				Image: ebiten.NewImageFromImage(img),
+				X:     290,
+				Y:     215,
+			},
+			Sheet:      animations.NewSpriteSheet(176, 111),
+			Animations: animations.NewAnimationHorizotal(0, 1, 32),
+			MarkTime:   markTime,
+		}
+		g.loadingState++
+
+	case 13:
+		g.loadCount++
+		markTime := 1 * 60
+		img, _, err := image.Decode(bytes.NewReader(images.Man3_png))
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.Man3 = entities.Char{
+			Sprite: &entities.Sprite{
+				Image: ebiten.NewImageFromImage(img),
+				X:     203,
+				Y:     218,
+			},
+			Sheet:      animations.NewSpriteSheet(128, 112),
+			Animations: animations.NewAnimationHorizotal(0, 1, 32),
+			MarkTime:   markTime,
+		}
+		g.loadingState++
+
+	case 14:
+		g.loadCount++
+		img, _, err := image.Decode(bytes.NewReader(images.MarkPerfect_png))
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.markPerfectImage = ebiten.NewImageFromImage(img)
+
+		g.loadCount++
+		img, _, err = image.Decode(bytes.NewReader(images.MarkGood_png))
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.markGoodImage = ebiten.NewImageFromImage(img)
+
+		g.loadCount++
+		img, _, err = image.Decode(bytes.NewReader(images.MarkMiss_png))
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.markMissImage = ebiten.NewImageFromImage(img)
+		g.loadingState++
+
+	case 15: // Loading Complete
+		g.state = inGameMenu
+		g.isLoaded = true
 	}
 }
 
